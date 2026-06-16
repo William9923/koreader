@@ -180,13 +180,192 @@ function FolderLock:init()
     end
 end
 
+local function get_current_folder(self)
+    if self.ui and self.ui.file_chooser and self.ui.file_chooser.path then
+        return self.ui.file_chooser.path
+    end
+    return nil
+end
+
 function FolderLock:addToMainMenu(menu_items)
     menu_items.folder_lock = {
         text = _("Folder Lock"),
         sorting_hint = "more_tools",
-        callback = function()
-            -- Placeholder: will be replaced with submenu in Step 6
-        end,
+        sub_item_table = {
+            {
+                text = _("Lock current folder"),
+                callback = function()
+                    local path = get_current_folder(self)
+                    if not path then
+                        UIManager:show(InfoMessage:new({
+                            text = _("No folder selected"),
+                            timeout = 2,
+                        }))
+                        return
+                    end
+
+                    -- First password entry dialog
+                    local pw_dialog
+                    pw_dialog = InputDialog:new({
+                        title = _("Lock folder"),
+                        description = path,
+                        text_type = "password",
+                        input_hint = _("Enter password"),
+                        buttons = {
+                            {
+                                {
+                                    text = _("Cancel"),
+                                    id = "close",
+                                    callback = function()
+                                        UIManager:close(pw_dialog)
+                                    end,
+                                },
+                                {
+                                    text = _("Next"),
+                                    is_enter_default = true,
+                                    callback = function()
+                                        local pw1 = pw_dialog:getInputText()
+                                        if pw1 == "" then
+                                            UIManager:show(InfoMessage:new({
+                                                text = _("Password cannot be empty"),
+                                                timeout = 2,
+                                            }))
+                                            return
+                                        end
+                                        UIManager:close(pw_dialog)
+
+                                        -- Re-confirm password dialog
+                                        local confirm_dialog
+                                        confirm_dialog = InputDialog:new({
+                                            title = _("Confirm password"),
+                                            text_type = "password",
+                                            input_hint = _("Re-enter password"),
+                                            buttons = {
+                                                {
+                                                    {
+                                                        text = _("Cancel"),
+                                                        id = "close",
+                                                        callback = function()
+                                                            UIManager:close(confirm_dialog)
+                                                        end,
+                                                    },
+                                                    {
+                                                        text = _("Lock"),
+                                                        is_enter_default = true,
+                                                        callback = function()
+                                                            local pw2 = confirm_dialog:getInputText()
+                                                            if pw1 ~= pw2 then
+                                                                UIManager:show(InfoMessage:new({
+                                                                    text = _("Passwords do not match"),
+                                                                    timeout = 2,
+                                                                }))
+                                                                UIManager:close(confirm_dialog)
+                                                                return
+                                                            end
+                                                            UIManager:close(confirm_dialog)
+                                                            _set_folder_lock(path, pw1)
+                                                            UIManager:show(InfoMessage:new({
+                                                                text = _("Folder locked"),
+                                                                timeout = 2,
+                                                            }))
+                                                        end,
+                                                    },
+                                                },
+                                            },
+                                        })
+                                        UIManager:show(confirm_dialog)
+                                        confirm_dialog:onShowKeyboard()
+                                    end,
+                                },
+                            },
+                        },
+                    })
+                    UIManager:show(pw_dialog)
+                    pw_dialog:onShowKeyboard()
+                end,
+            },
+            {
+                text = _("Unlock current folder"),
+                callback = function()
+                    local path = get_current_folder(self)
+                    if not path then
+                        UIManager:show(InfoMessage:new({
+                            text = _("No folder selected"),
+                            timeout = 2,
+                        }))
+                        return
+                    end
+
+                    local locked_path = check_folder_lock(path)
+                    if not locked_path then
+                        UIManager:show(InfoMessage:new({
+                            text = _("Folder is not locked"),
+                            timeout = 2,
+                        }))
+                        return
+                    end
+
+                    local unlock_dialog
+                    unlock_dialog = InputDialog:new({
+                        title = _("Unlock folder"),
+                        description = locked_path,
+                        text_type = "password",
+                        input_hint = _("Enter current password"),
+                        buttons = {
+                            {
+                                {
+                                    text = _("Cancel"),
+                                    id = "close",
+                                    callback = function()
+                                        UIManager:close(unlock_dialog)
+                                    end,
+                                },
+                                {
+                                    text = _("Unlock"),
+                                    is_enter_default = true,
+                                    callback = function()
+                                        local input = unlock_dialog:getInputText()
+                                        local hash = djb2_hash(input)
+                                        local stored = _lock_registry and _lock_registry[locked_path]
+                                        if hash ~= stored then
+                                            UIManager:show(InfoMessage:new({
+                                                text = _("Incorrect password"),
+                                                timeout = 2,
+                                            }))
+                                            return
+                                        end
+                                        UIManager:close(unlock_dialog)
+                                        _remove_folder_lock(locked_path)
+                                        UIManager:show(InfoMessage:new({
+                                            text = _("Folder unlocked"),
+                                            timeout = 2,
+                                        }))
+                                    end,
+                                },
+                            },
+                        },
+                    })
+                    UIManager:show(unlock_dialog)
+                    unlock_dialog:onShowKeyboard()
+                end,
+            },
+            {
+                text = _("Remove all locks"),
+                callback = function()
+                    UIManager:show(require("ui/widget/confirmbox"):new({
+                        text = _("Remove all folder locks?"),
+                        ok_text = _("Remove all"),
+                        ok_callback = function()
+                            _clear_all_locks()
+                            UIManager:show(InfoMessage:new({
+                                text = _("All locks removed"),
+                                timeout = 2,
+                            }))
+                        end,
+                    }))
+                end,
+            },
+        },
     }
 end
 
