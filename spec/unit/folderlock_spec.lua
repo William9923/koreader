@@ -173,4 +173,39 @@ describe("FolderLock plugin", function()
         local actual = ffiUtil.realpath(fm.file_chooser.path) or fm.file_chooser.path
         assert.are.equal(expected, actual)
     end)
+
+    -- Step 6
+    it("scenario: locked navigation shows password prompt and keeps current path", function()
+        seed_registry({
+            [ffiUtil.realpath(locked_dir) or locked_dir] = djb2_hash("secret123"),
+        })
+
+        create_filemanager(test_root)
+
+        local before = ffiUtil.realpath(fm.file_chooser.path) or fm.file_chooser.path
+
+        -- Try entering a locked folder
+        fm.file_chooser:changeToPath(locked_dir)
+        fastforward_ui_events()
+
+        -- Path should remain unchanged until successful unlock
+        local after = ffiUtil.realpath(fm.file_chooser.path) or fm.file_chooser.path
+        assert.are.equal(before, after)
+
+        -- Verify a password dialog is shown
+        local dialog = nil
+        for widget in UIManager:topdown_widgets_iter() do
+            if type(widget) == "table"
+                and type(widget.getInputText) == "function"
+                and type(widget.setInputText) == "function"
+                and widget.text_type == "password" then
+                dialog = widget
+                break
+            end
+        end
+        assert.is_not_nil(dialog, "password InputDialog should be visible for locked folder")
+
+        -- Cleanup shown dialog to avoid leaking UI state across tests
+        UIManager:close(dialog)
+    end)
 end)
