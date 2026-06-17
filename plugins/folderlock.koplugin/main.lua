@@ -75,11 +75,6 @@ local function _remove_folder_lock(path)
     return true
 end
 
-local function _clear_all_locks()
-    _lock_registry = {}
-    _save_registry()
-end
-
 -- Enumerate all ancestor paths (including the path itself),
 -- from deepest to shallowest (root-most).
 -- e.g., "/a/b/c" -> { "/a/b/c", "/a/b", "/a", "/" }
@@ -418,22 +413,7 @@ function FolderLock:addToMainMenu(menu_items)
                     unlock_dialog:onShowKeyboard()
                 end,
             },
-            {
-                text = _("Remove all locks"),
-                callback = function()
-                    UIManager:show(require("ui/widget/confirmbox"):new({
-                        text = _("Remove all folder locks?"),
-                        ok_text = _("Remove all"),
-                        ok_callback = function()
-                            _clear_all_locks()
-                            UIManager:show(InfoMessage:new({
-                                text = _("All locks removed"),
-                                timeout = 2,
-                            }))
-                        end,
-                    }))
-                end,
-            },
+
         },
     }
 end
