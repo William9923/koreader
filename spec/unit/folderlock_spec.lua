@@ -131,7 +131,6 @@ describe("FolderLock plugin", function()
         disable_plugins()
     end)
 
-    -- Step 3
     it("creates deterministic directory fixtures", function()
         assert.are.equal("directory", lfs.attributes(open_dir, "mode"))
         assert.are.equal("directory", lfs.attributes(locked_dir, "mode"))
@@ -152,7 +151,6 @@ describe("FolderLock plugin", function()
         assert.is_nil(lfs.attributes(registry_file, "mode"))
     end)
 
-    -- Step 4
     it("smoke: patches FileChooser.changeToPath on plugin init", function()
         local FileChooser = require("ui/widget/filechooser")
         local before_patch = FileChooser.changeToPath
@@ -172,7 +170,6 @@ describe("FolderLock plugin", function()
         assert.are.equal(expected, actual)
     end)
 
-    -- Step 5
     it("scenario: unlocked navigation is unaffected even when another folder is locked", function()
         seed_registry({
             [ffiUtil.realpath(locked_dir) or locked_dir] = djb2_hash("secret123"),
@@ -186,7 +183,6 @@ describe("FolderLock plugin", function()
         assert.are.equal(expected, actual)
     end)
 
-    -- Step 6
     it("scenario: locked navigation shows password prompt and keeps current path", function()
         seed_registry({
             [ffiUtil.realpath(locked_dir) or locked_dir] = djb2_hash("secret123"),
@@ -212,8 +208,7 @@ describe("FolderLock plugin", function()
         UIManager:close(dialog)
     end)
 
-    -- Step 7
-    it("scenario: wrong password keeps lock, correct password unlocks navigation", function()
+    it("scenario: wrong password keeps lock and path unchanged", function()
         local password = "secret123"
         seed_registry({
             [ffiUtil.realpath(locked_dir) or locked_dir] = djb2_hash(password),
@@ -239,13 +234,34 @@ describe("FolderLock plugin", function()
 
         local after_wrong = ffiUtil.realpath(fm.file_chooser.path) or fm.file_chooser.path
         assert.are.equal(before, after_wrong)
-        dialog = find_password_dialog()
-        assert.is_not_nil(dialog, "password dialog should still be visible after wrong password")
 
-        -- Correct password: navigation should proceed to locked_dir and dialog should close
+        local still_visible = find_password_dialog()
+        assert.is_not_nil(still_visible, "password dialog should still be visible after wrong password")
+
+        -- Cleanup dialog to avoid UI state leakage
+        UIManager:close(still_visible)
+    end)
+
+    it("scenario: correct password unlocks and navigates to locked path", function()
+        local password = "secret123"
+        seed_registry({
+            [ffiUtil.realpath(locked_dir) or locked_dir] = djb2_hash(password),
+        })
+
+        create_filemanager(test_root)
+
+        -- Trigger lock prompt
+        fm.file_chooser:changeToPath(locked_dir)
+        fastforward_ui_events()
+
+        local dialog = find_password_dialog()
+        assert.is_not_nil(dialog, "password dialog should appear on locked navigation")
+
+        local unlock_cb = dialog.buttons and dialog.buttons[1] and dialog.buttons[1][2] and dialog.buttons[1][2].callback
+        assert.is_not_nil(unlock_cb, "unlock callback should be available")
+
+        -- Correct password: navigation should proceed to locked_dir
         dialog:setInputText(password)
-        unlock_cb = dialog.buttons and dialog.buttons[1] and dialog.buttons[1][2] and dialog.buttons[1][2].callback
-        assert.is_not_nil(unlock_cb, "unlock callback should still be available")
         unlock_cb()
         fastforward_ui_events()
 
