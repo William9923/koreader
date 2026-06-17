@@ -72,6 +72,18 @@ describe("FolderLock plugin", function()
         return fm
     end
 
+    local function find_password_dialog()
+        for widget in UIManager:topdown_widgets_iter() do
+            if type(widget) == "table"
+                and type(widget.getInputText) == "function"
+                and type(widget.setInputText) == "function"
+                and widget.text_type == "password" then
+                return widget
+            end
+        end
+        return nil
+    end
+
     setup(function()
         require("commonrequire")
         DataStorage = require("datastorage")
@@ -193,19 +205,57 @@ describe("FolderLock plugin", function()
         assert.are.equal(before, after)
 
         -- Verify a password dialog is shown
-        local dialog = nil
-        for widget in UIManager:topdown_widgets_iter() do
-            if type(widget) == "table"
-                and type(widget.getInputText) == "function"
-                and type(widget.setInputText) == "function"
-                and widget.text_type == "password" then
-                dialog = widget
-                break
-            end
-        end
+        local dialog = find_password_dialog()
         assert.is_not_nil(dialog, "password InputDialog should be visible for locked folder")
 
         -- Cleanup shown dialog to avoid leaking UI state across tests
         UIManager:close(dialog)
+    end)
+
+    -- Step 7
+    it("scenario: wrong password keeps lock, correct password unlocks navigation", function()
+        local password = "secret123"
+        seed_registry({
+            [ffiUtil.realpath(locked_dir) or locked_dir] = djb2_hash(password),
+        })
+
+        create_filemanager(test_root)
+
+        -- Trigger lock prompt
+        fm.file_chooser:changeToPath(locked_dir)
+        fastforward_ui_events()
+
+        local before = ffiUtil.realpath(fm.file_chooser.path) or fm.file_chooser.path
+        local dialog = find_password_dialog()
+        assert.is_not_nil(dialog, "password dialog should appear on locked navigation")
+
+        local unlock_cb = dialog.buttons and dialog.buttons[1] and dialog.buttons[1][2] and dialog.buttons[1][2].callback
+        assert.is_not_nil(unlock_cb, "unlock callback should be available")
+
+        -- Wrong password: path must remain unchanged, dialog should remain available
+        dialog:setInputText("wrong-password")
+        unlock_cb()
+        fastforward_ui_events()
+
+        local after_wrong = ffiUtil.realpath(fm.file_chooser.path) or fm.file_chooser.path
+        assert.are.equal(before, after_wrong)
+        dialog = find_password_dialog()
+        assert.is_not_nil(dialog, "password dialog should still be visible after wrong password")
+
+        -- Correct password: navigation should proceed to locked_dir and dialog should close
+        dialog:setInputText(password)
+        unlock_cb = dialog.buttons and dialog.buttons[1] and dialog.buttons[1][2] and dialog.buttons[1][2].callback
+        assert.is_not_nil(unlock_cb, "unlock callback should still be available")
+        unlock_cb()
+        fastforward_ui_events()
+
+        local expected = ffiUtil.realpath(locked_dir) or locked_dir
+        local after_correct = ffiUtil.realpath(fm.file_chooser.path) or fm.file_chooser.path
+        assert.are.equal(expected, after_correct)
+
+        local leftover_dialog = find_password_dialog()
+        if leftover_dialog then
+            UIManager:close(leftover_dialog)
+        end
     end)
 end)
