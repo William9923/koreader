@@ -274,4 +274,65 @@ describe("FolderLock plugin", function()
             UIManager:close(leftover_dialog)
         end
     end)
+
+    -- Step 8
+    it("scenario: ancestor lock on parent blocks child path and prompts", function()
+        -- Lock parent folder, attempt to enter child folder
+        seed_registry({
+            [ffiUtil.realpath(locked_dir) or locked_dir] = djb2_hash("secret123"),
+        })
+
+        create_filemanager(test_root)
+
+        local before = ffiUtil.realpath(fm.file_chooser.path) or fm.file_chooser.path
+
+        fm.file_chooser:changeToPath(locked_sub_dir)
+        fastforward_ui_events()
+
+        local after = ffiUtil.realpath(fm.file_chooser.path) or fm.file_chooser.path
+        assert.are.equal(before, after, "child path should be blocked by parent lock")
+
+        local dialog = find_password_dialog()
+        assert.is_not_nil(dialog, "password dialog should appear for child path when parent is locked")
+        UIManager:close(dialog)
+    end)
+
+    it("scenario: lock enforcement persists after FileManager/plugin re-init", function()
+        local hash = djb2_hash("secret123")
+        seed_registry({
+            [ffiUtil.realpath(locked_dir) or locked_dir] = hash,
+        })
+
+        -- First runtime instance: lock is enforced
+        create_filemanager(test_root)
+        local before_first = ffiUtil.realpath(fm.file_chooser.path) or fm.file_chooser.path
+        fm.file_chooser:changeToPath(locked_sub_dir)
+        fastforward_ui_events()
+        local after_first = ffiUtil.realpath(fm.file_chooser.path) or fm.file_chooser.path
+        assert.are.equal(before_first, after_first, "first instance should block locked child path")
+
+        local first_dialog = find_password_dialog()
+        assert.is_not_nil(first_dialog, "first instance should show lock prompt")
+        UIManager:close(first_dialog)
+
+        -- Re-init runtime context without reseeding registry (persistence check)
+        if fm then
+            fm:onClose()
+            fm = nil
+        end
+        UIManager:quit()
+
+        reset_global_plugin_state()
+
+        create_filemanager(test_root)
+        local before_second = ffiUtil.realpath(fm.file_chooser.path) or fm.file_chooser.path
+        fm.file_chooser:changeToPath(locked_sub_dir)
+        fastforward_ui_events()
+        local after_second = ffiUtil.realpath(fm.file_chooser.path) or fm.file_chooser.path
+        assert.are.equal(before_second, after_second, "re-init instance should still block locked child path")
+
+        local second_dialog = find_password_dialog()
+        assert.is_not_nil(second_dialog, "re-init instance should still show lock prompt")
+        UIManager:close(second_dialog)
+    end)
 end)
